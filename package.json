@@ -1,0 +1,80 @@
+{
+  "name": "@mizunashi_mana/safe-file-deletion-mcp",
+  "version": "0.0.1",
+  "description": "A MCP Server for safely deleting files.",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "type": "module",
+  "bin": {
+    "safe-file-deletion-mcp": "dist/src/index.js"
+  },
+  "files": [
+    "dist/src/**/*.d.ts",
+    "dist/src/**/*.js",
+    "LICENSE",
+    "LICENSE.Apache-2.0.txt",
+    "LICENSE.MPL-2.0.txt",
+    "README.md",
+    "CONTRIBUTING.md",
+    "tsconfig.json"
+  ],
+  "author": "mizunashi-mana",
+  "license": "(Apache-2.0 OR MPL-2.0)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mizunashi-mana/safe-file-deletion-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mizunashi-mana/safe-file-deletion-mcp/issues"
+  },
+  "homepage": "https://github.com/mizunashi-mana/safe-file-deletion-mcp#readme",
+  "keywords": [
+    "mcp",
+    "file-deletion",
+    "safety",
+    "typescript"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "postinstall": "npm run build",
+    "build": "tsc --declaration && tsc-alias",
+    "start": "node dist/src/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest --run --coverage",
+    "lint": "git ls-files -- '*.ts' | xargs eslint --cache",
+    "lint:fix": "git ls-files -- '*.ts' | xargs eslint --cache --fix"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.6",
+    "@types/minimatch": "^5.1.2",
+    "@types/uuid": "^10.0.0",
+    "minimatch": "^10.0.3",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint-community/eslint-plugin-eslint-comments": "^4.5.0",
+    "@eslint/js": "^9.32.0",
+    "@stylistic/eslint-plugin": "^5.2.2",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.16.0",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import-x": "^4.16.1",
+    "eslint-plugin-n": "^17.21.2",
+    "eslint-plugin-promise": "^7.2.1",
+    "eslint-plugin-unused-imports": "^4.1.4",
+    "globals": "^16.3.0",
+    "tsc-alias": "^1.8.16",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.38.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.0.0"
+  }
+}
