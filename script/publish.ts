@@ -23,7 +23,7 @@ async function checkGitTagExists(version: string): Promise<boolean> {
   // First, fetch the specific tag from remote
   try {
     console.log(`→ Fetching tag v${version} from remote...`);
-    await execFileAsync('git', ['fetch', 'origin', `tag`, `v${version}`]);
+    await execFileAsync('git', ['fetch', 'origin', 'tag', `v${version}`]);
   }
   catch {
     // Tag doesn't exist on remote, which is fine
