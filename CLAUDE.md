@@ -16,7 +16,7 @@
 
 ### Post-Build Verification
 
-**Important**: Built JavaScript files must be executed with the `node` command. Direct execution is not possible as shebang is not included in built files (only in source TypeScript files).
+**Important**: Built JavaScript files must be executed with the `node` command. Direct execution is not possible as a shebang is not included in built files (only in source TypeScript files).
 
 ```bash
 # Execute build
