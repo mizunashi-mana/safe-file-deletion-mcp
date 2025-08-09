@@ -1,6 +1,6 @@
 {
   "name": "@mizunashi_mana/safe-file-deletion-mcp",
-  "version": "0.0.3",
+  "version": "1.0.0",
   "description": "A MCP Server for safely deleting files.",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
