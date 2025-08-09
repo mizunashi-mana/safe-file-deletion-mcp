@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { ComprehensiveErrorHandler } from '@/core/ComprehensiveErrorHandler.js';
 import { ConfigurationManager } from '@/core/ConfigurationManager.js';
 import { ErrorHandler } from '@/core/ErrorHandler.js';
@@ -75,59 +76,48 @@ export class ServerStartup {
    * Parse CLI arguments into structured format
    */
   parseCliArguments(args: string[]): CLIArguments {
+    const { values } = parseArgs({
+      args,
+      options: {
+        'allowed-directories': { type: 'string' },
+        'protected-patterns': { type: 'string' },
+        'config': { type: 'string' },
+        'log-level': { type: 'string' },
+        'help': { type: 'boolean', short: 'h' },
+        'version': { type: 'boolean', short: 'v' },
+      },
+      allowPositionals: false,
+      strict: false, // Allow unknown options to be ignored
+    });
+
     const result: CLIArguments = {
       allowedDirectories: [],
       protectedPatterns: [],
     };
 
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i];
-      const nextArg = args[i + 1];
+    if (typeof values['allowed-directories'] === 'string') {
+      // Convert relative paths to absolute paths
+      result.allowedDirectories = values['allowed-directories'].split(',').map((d: string) => resolve(d.trim()));
+    }
 
-      switch (arg) {
-        case '--allowed-directories':
-          if (nextArg !== undefined && !nextArg.startsWith('--')) {
-            // Convert relative paths to absolute paths
-            result.allowedDirectories = nextArg.split(',').map(d => resolve(d.trim()));
-            i++; // Skip next argument
-          }
-          break;
+    if (typeof values['protected-patterns'] === 'string') {
+      result.protectedPatterns = values['protected-patterns'].split(',').map((p: string) => p.trim());
+    }
 
-        case '--protected-patterns':
-          if (nextArg !== undefined && !nextArg.startsWith('--')) {
-            result.protectedPatterns = nextArg.split(',').map(p => p.trim());
-            i++; // Skip next argument
-          }
-          break;
+    if (typeof values.config === 'string') {
+      result.configPath = values.config;
+    }
 
-        case '--config':
-          if (nextArg !== undefined && !nextArg.startsWith('--')) {
-            result.configPath = nextArg;
-            i++; // Skip next argument
-          }
-          break;
+    if (typeof values['log-level'] === 'string' && isLogLevel(values['log-level'])) {
+      result.logLevel = values['log-level'];
+    }
 
-        case '--log-level':
-          if (nextArg !== undefined && isLogLevel(nextArg)) {
-            result.logLevel = nextArg;
-            i++; // Skip next argument
-          }
-          break;
+    if (values.help === true) {
+      result.showHelp = true;
+    }
 
-        case '--help':
-        case '-h':
-          result.showHelp = true;
-          break;
-
-        case '--version':
-        case '-v':
-          result.showVersion = true;
-          break;
-
-        default:
-          // Ignore unknown arguments
-          break;
-      }
+    if (values.version === true) {
+      result.showVersion = true;
     }
 
     return result;
