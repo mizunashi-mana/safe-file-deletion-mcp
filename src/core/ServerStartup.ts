@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, accessSync, constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -17,13 +17,13 @@ function findPackageJsonPath(): string {
 
   // Try different paths based on build context
   const possiblePaths = [
-    join(currentDir, '../../../package.json'), // Development/test from src/core/
-    join(currentDir, '../../package.json'), // Built from dist/src/core/
+    join(currentDir, '../../../package.json'), // Built from dist/src/core/
+    join(currentDir, '../../package.json'), // Development/test from src/core/
   ];
 
   for (const path of possiblePaths) {
     try {
-      readFileSync(path, 'utf-8');
+      accessSync(path, constants.F_OK);
       return path;
     }
     catch {
