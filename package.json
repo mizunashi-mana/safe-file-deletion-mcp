@@ -1,6 +1,6 @@
 {
   "name": "@mizunashi_mana/safe-file-deletion-mcp",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A MCP Server for safely deleting files.",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -40,7 +40,6 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "postinstall": "npm run build",
     "build": "tsc --declaration && tsc-alias",
     "start": "node dist/src/index.js",
     "dev": "tsx src/index.ts",
