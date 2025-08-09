@@ -101,7 +101,7 @@ export class ServerStartup {
         'version': { type: 'boolean', short: 'v' },
       },
       allowPositionals: false,
-      strict: false, // Allow unknown options to be ignored
+      strict: true, // Reject unknown options
     });
 
     const result: CLIArguments = {
