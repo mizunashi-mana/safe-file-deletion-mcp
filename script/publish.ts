@@ -5,6 +5,9 @@ import { promisify, parseArgs } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
+// Default branch name - change this if your repository uses a different default branch
+const DEFAULT_BRANCH = 'main';
+
 interface Options {
   dryRun: boolean;
 }
@@ -17,6 +20,43 @@ async function gitTag(version: string, dryRun: boolean): Promise<void> {
 
   await execFileAsync('git', ['tag', `v${version}`]);
   console.log(`✓ Created git tag v${version}`);
+}
+
+async function checkCurrentBranch(): Promise<void> {
+  const { stdout } = await execFileAsync('git', ['branch', '--show-current']);
+  const currentBranch = stdout.trim();
+
+  if (currentBranch !== DEFAULT_BRANCH) {
+    console.error(`Error: Currently on branch '${currentBranch}'. Please switch to '${DEFAULT_BRANCH}' branch before publishing.`);
+    throw new Error(`Not on ${DEFAULT_BRANCH} branch. Current branch: ${currentBranch}`);
+  }
+
+  console.log(`✓ Currently on ${DEFAULT_BRANCH} branch`);
+
+  // Fetch latest default branch from origin
+  console.log(`→ Fetching latest ${DEFAULT_BRANCH} branch from origin...`);
+  await execFileAsync('git', ['fetch', 'origin', DEFAULT_BRANCH]);
+
+  // Check if local default branch is behind origin
+  try {
+    const { stdout: behindCount } = await execFileAsync('git', ['rev-list', '--count', `${DEFAULT_BRANCH}..origin/${DEFAULT_BRANCH}`]);
+    const behind = parseInt(behindCount.trim(), 10);
+
+    if (behind > 0) {
+      console.error(`Error: Local ${DEFAULT_BRANCH} branch is ${behind} commit(s) behind origin/${DEFAULT_BRANCH}. Please pull the latest changes first.`);
+      throw new Error(`Local ${DEFAULT_BRANCH} branch is behind origin/${DEFAULT_BRANCH} by ${behind} commit(s)`);
+    }
+
+    console.log(`✓ Local ${DEFAULT_BRANCH} branch is up to date with origin/${DEFAULT_BRANCH}`);
+  }
+  catch (error) {
+    if (error instanceof Error && error.message.includes('unknown revision')) {
+      console.log(`✓ No origin/${DEFAULT_BRANCH} found (likely first push)`);
+    }
+    else {
+      throw error;
+    }
+  }
 }
 
 async function checkGitTagExists(version: string): Promise<boolean> {
@@ -112,6 +152,9 @@ Example:
   };
 
   console.log(`Current package version: ${version}`);
+
+  // Check current branch
+  await checkCurrentBranch();
 
   // Check for uncommitted changes
   const { stdout: gitStatus } = await execFileAsync('git', ['status', '--porcelain']);
