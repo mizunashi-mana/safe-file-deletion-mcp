@@ -16,7 +16,7 @@
 
 ### Post-Build Verification
 
-**Important**: Built JavaScript files must be executed with the `node` command. Direct execution is not possible as no shebang is included.
+**Important**: Built JavaScript files must be executed with the `node` command. Direct execution is not possible as shebang is not included in built files (only in source TypeScript files).
 
 ```bash
 # Execute build
@@ -37,7 +37,10 @@ node dist/src/index.js --allowed-directories . --protected-patterns ".git,node_m
 
 ### Actual Server Startup Examples
 ```bash
-# Development mode (direct TypeScript execution)
+# Development mode (direct TypeScript execution with shebang support)
+npx tsx src/index.ts --allowed-directories /tmp/test-dir --protected-patterns ".git,node_modules" --log-level debug
+
+# Alternative development mode
 npm run dev -- --allowed-directories /tmp/test-dir --protected-patterns ".git,node_modules" --log-level debug
 
 # Production mode (built JS execution)
@@ -117,8 +120,9 @@ node dist/src/index.js --allowed-directories /path/to/project --protected-patter
 ## Technical Notes
 
 ### Build Output
+- Source TypeScript files (`src/index.ts`) include shebang for `npx tsx` execution
 - Built JavaScript files (`dist/src/index.js`) do not include shebang
-- Must be executed via `node` command
+- Built files must be executed via `node` command
 - Relative paths are automatically converted to absolute paths
 - package.json information (version, description, etc.) is dynamically loaded
 

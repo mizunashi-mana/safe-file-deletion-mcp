@@ -11,6 +11,9 @@ export default defineConfig([
       'n/no-path-concat': 'error',
       'n/process-exit-as-throw': 'error',
 
+      // Allow shebangs
+      'n/hashbang': 'off',
+
       // Use eslint-plugin-import-x instead
       'n/no-missing-import': 'off',
       'n/no-unpublished-import': 'off',

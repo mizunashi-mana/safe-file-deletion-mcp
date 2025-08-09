@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { ServerStartup } from '@/core/ServerStartup.js';
 
 /**
