@@ -1,5 +1,8 @@
 # Safe File Deletion MCP Server
 
+[![npm version](https://badge.fury.io/js/%40mizunashi_mana%2Fsafe-file-deletion-mcp.svg)](https://badge.fury.io/js/%40mizunashi_mana%2Fsafe-file-deletion-mcp)
+[![Test Status](https://github.com/mizunashi-mana/safe-file-deletion-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/mizunashi-mana/safe-file-deletion-mcp/actions/workflows/test.yml)
+
 A Model Context Protocol (MCP) server that provides safe file and directory deletion with comprehensive protection mechanisms. This server ensures that critical files and directories are protected from accidental deletion while allowing safe cleanup operations within designated directories.
 
 ## 🌟 Features
@@ -52,7 +55,7 @@ safe-file-deletion-mcp --allowed-directories /tmp/safe-area
 | `--help` | Show help message | No | - |
 | `--version` | Show version information | No | - |
 
-\* Required unless using `--config`  
+\* Required unless using `--config`
 \** If provided, overrides the need for `--allowed-directories`
 
 ### Configuration File
