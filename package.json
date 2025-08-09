@@ -46,7 +46,7 @@
     "test": "vitest --run --coverage",
     "lint": "git ls-files -- '*.ts' | xargs eslint --cache",
     "lint:fix": "git ls-files -- '*.ts' | xargs eslint --cache --fix",
-    "publish": "tsx script/publish.ts"
+    "release": "tsx script/publish.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.2",
