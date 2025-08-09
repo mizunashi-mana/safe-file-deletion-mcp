@@ -11,10 +11,40 @@ import { ProtectionEngine } from '@/core/ProtectionEngine.js';
 import { SafeDeletionService } from '@/core/SafeDeletionService.js';
 import { type Configuration } from '@/types/index.js';
 
-// Load package.json dynamically with fallback for tests
-const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '../../../package.json');
+// Load package.json dynamically
+function findPackageJsonPath(): string {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
 
-let packageJson: {
+  // Try different paths based on build context
+  const possiblePaths = [
+    join(currentDir, '../../../package.json'), // Development/test from src/core/
+    join(currentDir, '../../package.json'), // Built from dist/src/core/
+  ];
+
+  for (const path of possiblePaths) {
+    try {
+      readFileSync(path, 'utf-8');
+      return path;
+    }
+    catch {
+      // Continue to next path
+    }
+  }
+
+  throw new Error('Could not find package.json. Make sure the application is running from the correct directory.');
+}
+
+const packageJsonPath = findPackageJsonPath();
+
+const packageJson: {
+  name: string;
+  version: string;
+  description: string;
+  homepage: string;
+  license: string;
+  repository: { url: string };
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- package.json is a known structure
+} = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
   name: string;
   version: string;
   description: string;
@@ -22,22 +52,6 @@ let packageJson: {
   license: string;
   repository: { url: string };
 };
-
-try {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- package.json is a valid JSON file
-  packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as typeof packageJson;
-}
-catch {
-  // Fallback for tests or when package.json is not accessible
-  packageJson = {
-    name: '@mizunashi_mana/safe-file-deletion-mcp',
-    version: '1.0.0',
-    description: 'A MCP Server for safely deleting files.',
-    homepage: 'https://github.com/mizunashi-mana/safe-file-deletion-mcp#readme',
-    license: '(Apache-2.0 OR MPL-2.0)',
-    repository: { url: 'git+https://github.com/mizunashi-mana/safe-file-deletion-mcp.git' },
-  };
-}
 
 // CLI argument interface
 export interface CLIArguments {
