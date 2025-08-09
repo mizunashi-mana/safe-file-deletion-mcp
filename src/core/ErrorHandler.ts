@@ -23,21 +23,21 @@ export class ErrorHandler {
   /**
    * Validate delete tool input using Zod schema
    */
-  validateDeleteInput(input: unknown): z.SafeParseReturnType<{ paths: string[] }, { paths: string[] }> {
+  validateDeleteInput(input: unknown): z.ZodSafeParseResult<{ paths: string[] }> {
     return DeleteInputSchema.safeParse(input);
   }
 
   /**
    * Validate list_protected tool input using Zod schema
    */
-  validateListProtectedInput(input: unknown): z.SafeParseReturnType<Record<string, never>, Record<string, never>> {
+  validateListProtectedInput(input: unknown): z.ZodSafeParseResult<Record<string, never>> {
     return ListProtectedInputSchema.safeParse(input);
   }
 
   /**
    * Validate get_allowed tool input using Zod schema
    */
-  validateGetAllowedInput(input: unknown): z.SafeParseReturnType<Record<string, never>, Record<string, never>> {
+  validateGetAllowedInput(input: unknown): z.ZodSafeParseResult<Record<string, never>> {
     return GetAllowedInputSchema.safeParse(input);
   }
 

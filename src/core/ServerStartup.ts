@@ -1,6 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, accessSync, constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { ComprehensiveErrorHandler } from '@/core/ComprehensiveErrorHandler.js';
 import { ConfigurationManager } from '@/core/ConfigurationManager.js';
 import { ErrorHandler } from '@/core/ErrorHandler.js';
@@ -10,10 +11,40 @@ import { ProtectionEngine } from '@/core/ProtectionEngine.js';
 import { SafeDeletionService } from '@/core/SafeDeletionService.js';
 import { type Configuration } from '@/types/index.js';
 
-// Load package.json dynamically with fallback for tests
-const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), '../../../package.json');
+// Load package.json dynamically
+function findPackageJsonPath(): string {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
 
-let packageJson: {
+  // Try different paths based on build context
+  const possiblePaths = [
+    join(currentDir, '../../../package.json'), // Built from dist/src/core/
+    join(currentDir, '../../package.json'), // Development/test from src/core/
+  ];
+
+  for (const path of possiblePaths) {
+    try {
+      accessSync(path, constants.F_OK);
+      return path;
+    }
+    catch {
+      // Continue to next path
+    }
+  }
+
+  throw new Error('Could not find package.json. Make sure the application is running from the correct directory.');
+}
+
+const packageJsonPath = findPackageJsonPath();
+
+const packageJson: {
+  name: string;
+  version: string;
+  description: string;
+  homepage: string;
+  license: string;
+  repository: { url: string };
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- package.json is a known structure
+} = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
   name: string;
   version: string;
   description: string;
@@ -21,22 +52,6 @@ let packageJson: {
   license: string;
   repository: { url: string };
 };
-
-try {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- package.json is a valid JSON file
-  packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as typeof packageJson;
-}
-catch {
-  // Fallback for tests or when package.json is not accessible
-  packageJson = {
-    name: '@mizunashi_mana/safe-file-deletion-mcp',
-    version: '1.0.0',
-    description: 'A MCP Server for safely deleting files.',
-    homepage: 'https://github.com/mizunashi-mana/safe-file-deletion-mcp#readme',
-    license: '(Apache-2.0 OR MPL-2.0)',
-    repository: { url: 'git+https://github.com/mizunashi-mana/safe-file-deletion-mcp.git' },
-  };
-}
 
 // CLI argument interface
 export interface CLIArguments {
@@ -75,59 +90,48 @@ export class ServerStartup {
    * Parse CLI arguments into structured format
    */
   parseCliArguments(args: string[]): CLIArguments {
+    const { values } = parseArgs({
+      args,
+      options: {
+        'allowed-directories': { type: 'string' },
+        'protected-patterns': { type: 'string' },
+        'config': { type: 'string' },
+        'log-level': { type: 'string' },
+        'help': { type: 'boolean', short: 'h' },
+        'version': { type: 'boolean', short: 'v' },
+      },
+      allowPositionals: false,
+      strict: true, // Reject unknown options
+    });
+
     const result: CLIArguments = {
       allowedDirectories: [],
       protectedPatterns: [],
     };
 
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i];
-      const nextArg = args[i + 1];
+    if (typeof values['allowed-directories'] === 'string') {
+      // Convert relative paths to absolute paths
+      result.allowedDirectories = values['allowed-directories'].split(',').map((d: string) => resolve(d.trim()));
+    }
 
-      switch (arg) {
-        case '--allowed-directories':
-          if (nextArg !== undefined && !nextArg.startsWith('--')) {
-            // Convert relative paths to absolute paths
-            result.allowedDirectories = nextArg.split(',').map(d => resolve(d.trim()));
-            i++; // Skip next argument
-          }
-          break;
+    if (typeof values['protected-patterns'] === 'string') {
+      result.protectedPatterns = values['protected-patterns'].split(',').map((p: string) => p.trim());
+    }
 
-        case '--protected-patterns':
-          if (nextArg !== undefined && !nextArg.startsWith('--')) {
-            result.protectedPatterns = nextArg.split(',').map(p => p.trim());
-            i++; // Skip next argument
-          }
-          break;
+    if (typeof values.config === 'string') {
+      result.configPath = values.config;
+    }
 
-        case '--config':
-          if (nextArg !== undefined && !nextArg.startsWith('--')) {
-            result.configPath = nextArg;
-            i++; // Skip next argument
-          }
-          break;
+    if (typeof values['log-level'] === 'string' && isLogLevel(values['log-level'])) {
+      result.logLevel = values['log-level'];
+    }
 
-        case '--log-level':
-          if (nextArg !== undefined && isLogLevel(nextArg)) {
-            result.logLevel = nextArg;
-            i++; // Skip next argument
-          }
-          break;
+    if (values.help === true) {
+      result.showHelp = true;
+    }
 
-        case '--help':
-        case '-h':
-          result.showHelp = true;
-          break;
-
-        case '--version':
-        case '-v':
-          result.showVersion = true;
-          break;
-
-        default:
-          // Ignore unknown arguments
-          break;
-      }
+    if (values.version === true) {
+      result.showVersion = true;
     }
 
     return result;
