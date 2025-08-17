@@ -1,25 +1,33 @@
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { type ProtectionEngine } from '@/core/ProtectionEngine.js';
+import { inject, injectable } from 'inversify';
+import { ConfigProvider, ConfigProviderTag } from '@/services/ConfigProvider.js';
+import { LoggingService, LoggingServiceTag } from '@/services/LoggingService.js';
+import { ProtectionEngine, ProtectionEngineTag } from '@/services/ProtectionEngine.js';
 import {
-  type Configuration,
   type DeletionResult,
   type BatchDeletionResult,
   type ValidationResult,
   type BatchValidationResult,
 } from '@/types/index.js';
 
-export interface Logger {
-  logDeletion: (path: string, result: 'success' | 'failed' | 'rejected') => void;
-  logError: (error: Error, context: string) => void;
+export const SafeDeletionServiceTag = Symbol.for('SafeDeletionService');
+
+export interface SafeDeletionService {
+  deleteFile: (filePath: string) => Promise<DeletionResult>;
+  deleteDirectory: (dirPath: string) => Promise<DeletionResult>;
+  deleteBatch: (paths: string[]) => Promise<BatchDeletionResult>;
+  validatePath: (filePath: string) => ValidationResult;
+  validateBatch: (paths: string[]) => BatchValidationResult;
 }
 
-export class SafeDeletionService {
+@injectable()
+export class SafeDeletionServiceImpl implements SafeDeletionService {
   constructor(
-    private readonly config: Configuration,
-    private readonly protectionEngine: ProtectionEngine,
-    private readonly logger: Logger,
+    @inject(ProtectionEngineTag) private readonly protectionEngine: ProtectionEngine,
+    @inject(ConfigProviderTag) private readonly configProvider: ConfigProvider,
+    @inject(LoggingServiceTag) private readonly logger: LoggingService,
   ) {}
 
   async deleteFile(filePath: string): Promise<DeletionResult> {
@@ -27,7 +35,7 @@ export class SafeDeletionService {
       // パス検証
       const validation = this.validatePath(filePath);
       if (!validation.valid) {
-        this.logger.logDeletion(filePath, 'rejected');
+        void this.logger.logDeletion(filePath, 'rejected');
         return {
           success: false,
           path: filePath,
@@ -37,7 +45,7 @@ export class SafeDeletionService {
 
       // ファイル存在確認
       if (!existsSync(filePath)) {
-        this.logger.logDeletion(filePath, 'failed');
+        void this.logger.logDeletion(filePath, 'failed');
         return {
           success: false,
           path: filePath,
@@ -48,7 +56,7 @@ export class SafeDeletionService {
       // ファイル削除実行
       await fs.unlink(filePath);
 
-      this.logger.logDeletion(filePath, 'success');
+      void this.logger.logDeletion(filePath, 'success');
       return {
         success: true,
         path: filePath,
@@ -57,7 +65,7 @@ export class SafeDeletionService {
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       if (error instanceof Error) {
-        this.logger.logError(error, `deleteFile: ${filePath}`);
+        void this.logger.logError(error, `deleteFile: ${filePath}`);
       }
 
       return {
@@ -73,7 +81,7 @@ export class SafeDeletionService {
       // パス検証
       const validation = this.validatePath(dirPath);
       if (!validation.valid) {
-        this.logger.logDeletion(dirPath, 'rejected');
+        void this.logger.logDeletion(dirPath, 'rejected');
         return {
           success: false,
           path: dirPath,
@@ -83,7 +91,7 @@ export class SafeDeletionService {
 
       // ディレクトリ存在確認
       if (!existsSync(dirPath)) {
-        this.logger.logDeletion(dirPath, 'failed');
+        void this.logger.logDeletion(dirPath, 'failed');
         return {
           success: false,
           path: dirPath,
@@ -94,7 +102,7 @@ export class SafeDeletionService {
       // ディレクトリ削除実行（空のディレクトリのみ）
       await fs.rmdir(dirPath);
 
-      this.logger.logDeletion(dirPath, 'success');
+      void this.logger.logDeletion(dirPath, 'success');
       return {
         success: true,
         path: dirPath,
@@ -103,7 +111,7 @@ export class SafeDeletionService {
     catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       if (error instanceof Error) {
-        this.logger.logError(error, `deleteDirectory: ${dirPath}`);
+        void this.logger.logError(error, `deleteDirectory: ${dirPath}`);
       }
 
       return {
@@ -148,13 +156,13 @@ export class SafeDeletionService {
 
   async deleteBatch(paths: string[]): Promise<BatchDeletionResult> {
     // バッチサイズ制限チェック
-    if (paths.length > this.config.maxBatchSize) {
+    if (paths.length > this.configProvider.getMaxBatchSize()) {
       return {
         deleted: [],
         failed: [],
         rejected: paths.map(path => ({
           path,
-          reason: `Batch size exceeds limit (${this.config.maxBatchSize})`,
+          reason: `Batch size exceeds limit (${this.configProvider.getMaxBatchSize()})`,
         })),
         cancelled: true,
         reason: 'Batch size limit exceeded',

@@ -1,9 +1,11 @@
 import { existsSync } from 'fs';
 import * as fs from 'fs/promises';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { ProtectionEngine } from '@/core/ProtectionEngine.js';
-import { SafeDeletionService } from '@/core/SafeDeletionService.js';
-import { type Configuration, ErrorType, SafeDeletionError } from '@/types/index.js';
+import { ConfigProviderImpl } from '@/services/ConfigProvider.js';
+import { LoggingServiceImpl } from '@/services/LoggingService.js';
+import { ProtectionEngineImpl } from '@/services/ProtectionEngine.js';
+import { SafeDeletionServiceImpl } from '@/services/SafeDeletionService.js';
+import { ErrorType, SafeDeletionError, DEFAULT_CONFIG } from '@/types/index.js';
 
 vi.mock('fs/promises');
 vi.mock('fs', () => ({
@@ -12,35 +14,29 @@ vi.mock('fs', () => ({
 }));
 
 describe('SafeDeletionService', () => {
-  let service: SafeDeletionService;
-  let protectionEngine: ProtectionEngine;
-  let config: Configuration;
-  let mockLogger: {
-    logDeletion: ReturnType<typeof vi.fn>;
-    logError: ReturnType<typeof vi.fn>;
-  };
+  let service: SafeDeletionServiceImpl;
+  let protectionEngine: ProtectionEngineImpl;
+  let configProvider: ConfigProviderImpl;
+  let loggingService: LoggingServiceImpl;
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    config = {
+    configProvider = new ConfigProviderImpl({
+      ...DEFAULT_CONFIG,
       allowedDirectories: ['/Users/test/project'],
       protectedPatterns: ['.git', '*.env', '.env*'],
       logLevel: 'info',
       maxBatchSize: 50,
-    };
+    });
 
-    protectionEngine = new ProtectionEngine(
-      config.protectedPatterns,
-      config.allowedDirectories,
-    );
+    protectionEngine = new ProtectionEngineImpl(configProvider);
+    loggingService = new LoggingServiceImpl(configProvider);
 
-    mockLogger = {
-      logDeletion: vi.fn(),
-      logError: vi.fn(),
-    };
+    vi.spyOn(loggingService, 'logDeletion').mockResolvedValue();
+    vi.spyOn(loggingService, 'logError').mockResolvedValue();
 
-    service = new SafeDeletionService(config, protectionEngine, mockLogger);
+    service = new SafeDeletionServiceImpl(protectionEngine, configProvider, loggingService);
 
     // By default, assume files exist
     vi.mocked(existsSync).mockReturnValue(true);
@@ -60,7 +56,7 @@ describe('SafeDeletionService', () => {
       expect(result.success).toBe(true);
       expect(result.path).toBe(filePath);
       expect(fs.unlink).toHaveBeenCalledWith(filePath);
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(filePath, 'success');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(filePath, 'success');
     });
 
     it('rejects deletion of protected files', async () => {
@@ -71,7 +67,7 @@ describe('SafeDeletionService', () => {
       expect(result.success).toBe(false);
       expect(result.reason).toContain('protected');
       expect(fs.unlink).not.toHaveBeenCalled();
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(filePath, 'rejected');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(filePath, 'rejected');
     });
 
     it('rejects deletion of files outside allowed directories', async () => {
@@ -82,7 +78,7 @@ describe('SafeDeletionService', () => {
       expect(result.success).toBe(false);
       expect(result.reason).toContain('outside allowed directories');
       expect(fs.unlink).not.toHaveBeenCalled();
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(filePath, 'rejected');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(filePath, 'rejected');
     });
 
     it('returns error when deleting non-existent file', async () => {
@@ -94,7 +90,7 @@ describe('SafeDeletionService', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('not found');
       expect(fs.unlink).not.toHaveBeenCalled();
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(filePath, 'failed');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(filePath, 'failed');
     });
 
     it('properly handles filesystem errors', async () => {
@@ -106,7 +102,7 @@ describe('SafeDeletionService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('EPERM');
-      expect(mockLogger.logError).toHaveBeenCalled();
+      expect(loggingService.logError).toHaveBeenCalled();
     });
 
     it('rejects relative paths', async () => {
@@ -130,7 +126,7 @@ describe('SafeDeletionService', () => {
       expect(result.success).toBe(true);
       expect(result.path).toBe(dirPath);
       expect(fs.rmdir).toHaveBeenCalledWith(dirPath);
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(dirPath, 'success');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(dirPath, 'success');
     });
 
     it('rejects deletion of protected directories', async () => {
@@ -215,7 +211,7 @@ describe('SafeDeletionService', () => {
 
       await service.deleteFile(filePath);
 
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(filePath, 'success');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(filePath, 'success');
     });
 
     it('logs rejected deletions', async () => {
@@ -223,7 +219,7 @@ describe('SafeDeletionService', () => {
 
       await service.deleteFile(filePath);
 
-      expect(mockLogger.logDeletion).toHaveBeenCalledWith(filePath, 'rejected');
+      expect(loggingService.logDeletion).toHaveBeenCalledWith(filePath, 'rejected');
     });
 
     it('logs failed deletions', async () => {
@@ -232,7 +228,7 @@ describe('SafeDeletionService', () => {
 
       await service.deleteFile(filePath);
 
-      expect(mockLogger.logError).toHaveBeenCalled();
+      expect(loggingService.logError).toHaveBeenCalled();
     });
   });
 

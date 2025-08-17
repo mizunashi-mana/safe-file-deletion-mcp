@@ -1,372 +1,181 @@
-import { readFileSync, accessSync, constants } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import 'reflect-metadata';
 import { parseArgs } from 'node:util';
-import { ComprehensiveErrorHandler } from '@/core/ComprehensiveErrorHandler.js';
-import { ConfigurationManager } from '@/core/ConfigurationManager.js';
-import { ErrorHandler } from '@/core/ErrorHandler.js';
-import { LoggingService } from '@/core/LoggingService.js';
-import { MCPServer } from '@/core/MCPServer.js';
-import { ProtectionEngine } from '@/core/ProtectionEngine.js';
-import { SafeDeletionService } from '@/core/SafeDeletionService.js';
-import { type Configuration } from '@/types/index.js';
+import { buildContainer, type DIContainer } from '@/container/DIContainer.js';
+import { loadConfig } from '@/loader/loadConfig.js';
+import { type LoggingService } from '@/services/LoggingService.js';
+import { loadPackageInfo, type PackageInfoProvider } from '@/services/PackageInfoProvider.js';
+import { type SafeFileDeletionMCPServer } from '@/services/SafeFileDeletionMCPServer.js';
+import { type CLIArguments } from '@/types/index.js';
 
-// Load package.json dynamically
-function findPackageJsonPath(): string {
-  const currentDir = dirname(fileURLToPath(import.meta.url));
-
-  // Try different paths based on build context
-  const possiblePaths = [
-    join(currentDir, '../../../package.json'), // Built from dist/src/core/
-    join(currentDir, '../../package.json'), // Development/test from src/core/
-  ];
-
-  for (const path of possiblePaths) {
-    try {
-      accessSync(path, constants.F_OK);
-      return path;
-    }
-    catch {
-      // Continue to next path
-    }
-  }
-
-  throw new Error('Could not find package.json. Make sure the application is running from the correct directory.');
-}
-
-const packageJsonPath = findPackageJsonPath();
-
-const packageJson: {
-  name: string;
-  version: string;
-  description: string;
-  homepage: string;
-  license: string;
-  repository: { url: string };
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- package.json is a known structure
-} = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
-  name: string;
-  version: string;
-  description: string;
-  homepage: string;
-  license: string;
-  repository: { url: string };
-};
-
-// CLI argument interface
-export interface CLIArguments {
-  allowedDirectories: string[];
-  protectedPatterns: string[];
-  configPath?: string;
-  logLevel?: 'none' | 'debug' | 'info' | 'warn' | 'error';
-  showHelp?: boolean;
-  showVersion?: boolean;
-}
-
-function isLogLevel(value: string): value is 'none' | 'debug' | 'info' | 'warn' | 'error' {
-  return ['none', 'debug', 'info', 'warn', 'error'].includes(value);
-}
-
-// Server startup result interface
-export interface StartupResult {
-  success: boolean;
-  error?: string;
-  suggestion?: string;
-}
-
-// Component container interface
-export interface ServerComponents {
-  configManager: ConfigurationManager;
-  protectionEngine: ProtectionEngine;
-  deletionService: SafeDeletionService;
+interface ServerComponents {
+  mcpServer: SafeFileDeletionMCPServer;
   loggingService: LoggingService;
-  mcpServer: MCPServer;
-  errorHandler: ErrorHandler;
-  comprehensiveErrorHandler: ComprehensiveErrorHandler;
 }
 
 export class ServerStartup {
+  private container?: DIContainer;
+  private packageInfoProvider?: PackageInfoProvider;
+
   /**
-   * Parse CLI arguments into structured format
+   * Initialize package info provider
    */
-  parseCliArguments(args: string[]): CLIArguments {
+  async initializePackageInfo(): Promise<PackageInfoProvider> {
+    this.packageInfoProvider ??= await loadPackageInfo();
+    return this.packageInfoProvider;
+  }
+
+  /**
+   * Parse command-line arguments
+   */
+  async parseArguments(): Promise<CLIArguments | undefined> {
+    const packageInfoProvider = await this.initializePackageInfo();
+
     const { values } = parseArgs({
-      args,
+      args: process.argv.slice(2),
       options: {
-        'allowed-directories': { type: 'string' },
-        'protected-patterns': { type: 'string' },
-        'config': { type: 'string' },
-        'log-level': { type: 'string' },
-        'help': { type: 'boolean', short: 'h' },
-        'version': { type: 'boolean', short: 'v' },
+        'allowed-directories': {
+          type: 'string',
+          multiple: true,
+          default: [],
+        },
+        'protected-patterns': {
+          type: 'string',
+          multiple: true,
+          default: [],
+        },
+        'log-level': {
+          type: 'string',
+          default: 'info',
+        },
+        'max-batch-size': {
+          type: 'string',
+        },
+        'max-log-file-size': {
+          type: 'string',
+        },
+        'max-log-files': {
+          type: 'string',
+        },
+        'config-file': {
+          type: 'string',
+        },
+        'help': {
+          type: 'boolean',
+        },
+        'version': {
+          type: 'boolean',
+        },
       },
       allowPositionals: false,
-      strict: true, // Reject unknown options
     });
 
-    const result: CLIArguments = {
-      allowedDirectories: [],
-      protectedPatterns: [],
-    };
-
-    if (typeof values['allowed-directories'] === 'string') {
-      // Convert relative paths to absolute paths
-      result.allowedDirectories = values['allowed-directories'].split(',').map((d: string) => resolve(d.trim()));
-    }
-
-    if (typeof values['protected-patterns'] === 'string') {
-      result.protectedPatterns = values['protected-patterns'].split(',').map((p: string) => p.trim());
-    }
-
-    if (typeof values.config === 'string') {
-      result.configPath = values.config;
-    }
-
-    if (typeof values['log-level'] === 'string' && isLogLevel(values['log-level'])) {
-      result.logLevel = values['log-level'];
-    }
-
+    // Handle help
     if (values.help === true) {
-      result.showHelp = true;
+      console.log(`${packageInfoProvider.getName()} v${packageInfoProvider.getVersion()}
+${packageInfoProvider.getDescription()}
+
+Usage: ${packageInfoProvider.getName()} [options]
+
+Options:
+  --allowed-directories <dir>...  Directories where deletion is allowed (required)
+  --protected-patterns <pattern>... Glob patterns for protected files (default: [".git", "node_modules", ".env*"])
+  --log-level <level>            Log level: none, debug, info, warn, error (default: info)
+  --max-batch-size <size>        Maximum batch deletion size (default: 100)
+  --max-log-file-size <bytes>    Maximum log file size in bytes (default: 10485760)
+  --max-log-files <count>        Maximum number of log files to keep (default: 10)
+  --config-file <path>           Path to configuration file
+  --help                         Show this help message
+  --version                      Show version information
+
+MCP Server for safe file deletion with comprehensive logging and protection mechanisms.
+`);
+      return undefined;
     }
 
+    // Handle version
     if (values.version === true) {
-      result.showVersion = true;
+      console.log(packageInfoProvider.getVersion());
+      return undefined;
     }
 
-    return result;
-  }
-
-  /**
-   * Initialize configuration from CLI arguments and config file
-   */
-  async initializeConfiguration(cliArgs: CLIArguments): Promise<Configuration> {
-    const configManager = new ConfigurationManager(cliArgs, cliArgs.configPath);
-    return await configManager.initialize();
-  }
-
-  /**
-   * Initialize all server components with dependency injection
-   */
-  async initializeComponents(config: Configuration): Promise<ServerComponents> {
-    // Create configuration manager
-    const configManager = new ConfigurationManager({
-      allowedDirectories: config.allowedDirectories,
-      protectedPatterns: config.protectedPatterns,
-      logLevel: config.logLevel,
-    });
-    await configManager.initialize();
-
-    // Create protection engine
-    const protectionEngine = new ProtectionEngine(
-      config.protectedPatterns,
-      config.allowedDirectories,
-    );
-
-    // Create logging service
-    const loggingService = new LoggingService(config);
-
-    // Create error handlers
-    const errorHandler = new ErrorHandler();
-    const comprehensiveErrorHandler = new ComprehensiveErrorHandler(
-      errorHandler,
-      loggingService,
-    );
-
-    // Create deletion service with logger interface
-    const logger = {
-      logDeletion: async (path: string, result: 'success' | 'failed' | 'rejected', reason?: string): Promise<void> => {
-        await loggingService.logDeletion(path, result, reason);
-      },
-      logError: async (error: Error, context: string): Promise<void> => {
-        await loggingService.logError(error, context);
-      },
+    // Convert parsed values to CLIArguments
+    const logLevelValue = values['log-level'];
+    const isValidLogLevel = (value: unknown): value is 'none' | 'debug' | 'info' | 'warn' | 'error' => {
+      return typeof value === 'string' && ['none', 'debug', 'info', 'warn', 'error'].includes(value);
     };
-
-    const deletionService = new SafeDeletionService(
-      config,
-      protectionEngine,
-      logger,
-    );
-
-    // Create MCP server
-    const mcpServer = new MCPServer(
-      configManager,
-      protectionEngine,
-      deletionService,
-      loggingService,
-    );
 
     return {
-      configManager,
-      protectionEngine,
-      deletionService,
-      loggingService,
+      allowedDirectories: values['allowed-directories'] as string[] | undefined,
+      protectedPatterns: values['protected-patterns'] as string[] | undefined,
+      logLevel: isValidLogLevel(logLevelValue) ? logLevelValue : undefined,
+      maxBatchSize: values['max-batch-size'] !== undefined ? Number(values['max-batch-size']) : undefined,
+      maxLogFileSize: values['max-log-file-size'] !== undefined ? Number(values['max-log-file-size']) : undefined,
+      maxLogFiles: values['max-log-files'] !== undefined ? Number(values['max-log-files']) : undefined,
+      configFile: values['config-file'],
+    };
+  }
+
+  /**
+   * Initialize all server components
+   */
+  async initializeComponents(args: CLIArguments): Promise<ServerComponents> {
+    // Get package info provider (already initialized)
+    const packageInfoProvider = await this.initializePackageInfo();
+
+    // Load configuration
+    const configProvider = await loadConfig(args);
+
+    // Build DI container
+    this.container = buildContainer({
+      packageInfoProvider,
+      configProvider,
+    });
+
+    // Get services from container
+    const mcpServer = this.container.getMCPServer();
+    const loggingService = this.container.getLoggingService();
+
+    // Log server startup
+    await loggingService.logServerStart({
+      allowedDirectories: configProvider.getAllowedDirectories(),
+      protectedPatterns: configProvider.getProtectedPatterns(),
+      logLevel: configProvider.getLogLevel(),
+      maxBatchSize: configProvider.getMaxBatchSize(),
+      maxLogFileSize: configProvider.getMaxLogFileSize(),
+      maxLogFiles: configProvider.getMaxLogFiles(),
+    });
+
+    return {
       mcpServer,
-      errorHandler,
-      comprehensiveErrorHandler,
+      loggingService,
     };
   }
 
   /**
-   * Start the server with given CLI arguments
+   * Start the MCP server
    */
-  async startServer(cliArgs: CLIArguments): Promise<StartupResult> {
+  async start(): Promise<void> {
     try {
-      // Initialize configuration
-      const config = await this.initializeConfiguration(cliArgs);
-
-      // Initialize all components
-      const components = await this.initializeComponents(config);
-
-      // Log server startup
-      await components.loggingService.logServerStart(config);
-
-      // Start MCP server
-      await components.mcpServer.start();
-
-      // Register shutdown handlers
-      this.registerShutdownHandlers(
-        components.mcpServer,
-        components.loggingService,
-      );
-
-      return { success: true };
-    }
-    catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        success: false,
-        error: errorMessage,
-        suggestion: this.generateErrorSuggestion(errorMessage),
-      };
-    }
-  }
-
-  /**
-   * Register signal handlers for graceful shutdown
-   */
-  registerShutdownHandlers(mcpServer: MCPServer, loggingService: LoggingService): void {
-    const gracefulShutdown = async () => {
-      console.log('\\nReceived shutdown signal, shutting down gracefully...');
-
-      try {
-        await mcpServer.stop();
-        await loggingService.close();
-        console.log('Server shut down successfully.');
+      // Parse arguments
+      const args = await this.parseArguments();
+      if (args === undefined) {
+        return;
       }
-      catch (error) {
-        console.error('Error during shutdown:', error);
-      }
-      finally {
-        // eslint-disable-next-line n/no-process-exit -- Required for graceful shutdown
-        process.exit(0);
-      }
-    };
 
-    process.on('SIGINT', () => {
-      void gracefulShutdown();
-    });
-    process.on('SIGTERM', () => {
-      void gracefulShutdown();
-    });
-  }
+      // Initialize components
+      const { mcpServer, loggingService } = await this.initializeComponents(args);
 
-  /**
-   * Graceful shutdown of all components
-   */
-  async gracefulShutdown(components: ServerComponents): Promise<void> {
-    try {
-      // Stop MCP server
-      await components.mcpServer.stop();
+      // Start the server
+      const packageInfoProvider = await this.initializePackageInfo();
+      console.error(`Starting ${packageInfoProvider.getName()} v${packageInfoProvider.getVersion()}...`);
+      await mcpServer.start();
+
+      // Log successful startup
+      await loggingService.logDebug('Server started successfully');
     }
     catch (error) {
-      console.warn('Error stopping MCP server:', error);
+      console.error('Failed to start server:', error);
+      throw error;
     }
-
-    try {
-      // Dispose protection engine
-      components.protectionEngine.dispose();
-    }
-    catch (error) {
-      console.warn('Error disposing protection engine:', error);
-    }
-
-    try {
-      // Close logging service
-      await components.loggingService.close();
-    }
-    catch (error) {
-      console.warn('Error closing logging service:', error);
-    }
-  }
-
-  /**
-   * Generate helpful error suggestions based on error message
-   */
-  private generateErrorSuggestion(errorMessage: string): string {
-    if (errorMessage.includes('At least one allowed directory must be specified')) {
-      return 'Please specify at least one allowed directory using --allowed-directories flag.';
-    }
-
-    if (errorMessage.includes('Allowed directory does not exist')) {
-      return 'Please verify the directory path exists and is accessible.';
-    }
-
-    if (errorMessage.includes('permission denied') || errorMessage.includes('EACCES')) {
-      return 'Please check access permissions for the specified directories.';
-    }
-
-    if (errorMessage.includes('ENOENT')) {
-      return 'Please verify the file or directory path is correct.';
-    }
-
-    if (errorMessage.includes('Failed to bind')) {
-      return 'Another instance might be running, or there may be a port conflict.';
-    }
-
-    if (errorMessage.includes('config')) {
-      return 'Please check the configuration file format and values.';
-    }
-
-    return 'Please check the error details and refer to the documentation for guidance.';
-  }
-
-  /**
-   * Display help information
-   */
-  displayHelp(): void {
-    const binaryName = 'safe-file-deletion-mcp';
-    console.log(`
-${packageJson.description}
-Version: ${packageJson.version}
-
-USAGE:
-  ${binaryName} [OPTIONS]
-
-OPTIONS:
-  --allowed-directories <dirs>    Comma-separated list of allowed directories
-  --protected-patterns <patterns> Comma-separated list of protected patterns
-  --config <path>                 Path to configuration file
-  --log-level <level>             Log level (none, debug, info, warn, error)
-  --help, -h                      Show this help message
-  --version, -v                   Show version information
-
-EXAMPLES:
-  ${binaryName} --allowed-directories /tmp,/home/user/projects --protected-patterns .git,node_modules
-  ${binaryName} --config /etc/safe-deletion.json --log-level debug
-
-For more information, visit: ${packageJson.homepage}
-`);
-  }
-
-  /**
-   * Display version information
-   */
-  displayVersion(): void {
-    console.log(`${packageJson.name} v${packageJson.version}`);
-    console.log(`Description: ${packageJson.description}`);
-    console.log(`License: ${packageJson.license}`);
-    console.log(`Homepage: ${packageJson.homepage}`);
   }
 }

@@ -1,6 +1,7 @@
 /dist/
 /coverage/
 /logs/
+*.bak
 
 # Devenv
 .devenv*

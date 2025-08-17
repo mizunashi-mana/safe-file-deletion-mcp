@@ -1,15 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ProtectionEngine } from '@/core/ProtectionEngine.js';
+import { ConfigProviderImpl } from '@/services/ConfigProvider.js';
+import { ProtectionEngineImpl } from '@/services/ProtectionEngine.js';
+import { DEFAULT_CONFIG } from '@/types/index.js';
 
 describe('ProtectionEngine', () => {
-  let engine: ProtectionEngine;
+  let engine: ProtectionEngineImpl;
+  let configProvider: ConfigProviderImpl;
 
   describe('basic protection pattern matching', () => {
     beforeEach(() => {
-      engine = new ProtectionEngine(
-        ['.git', 'node_modules', '*.env', '.env*', '*.key'],
-        ['/Users/test/project'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: ['.git', 'node_modules', '*.env', '.env*', '*.key'],
+        allowedDirectories: ['/Users/test/project'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
     });
 
     it('protects .git directory and its contents', () => {
@@ -43,10 +48,12 @@ describe('ProtectionEngine', () => {
 
   describe('allowed directory scope check', () => {
     beforeEach(() => {
-      engine = new ProtectionEngine(
-        ['.git'],
-        ['/Users/test/project', '/Users/test/another-project'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: ['.git'],
+        allowedDirectories: ['/Users/test/project', '/Users/test/another-project'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
     });
 
     it('judges paths within allowed directories as within scope', () => {
@@ -73,10 +80,12 @@ describe('ProtectionEngine', () => {
 
   describe('getting matching allowed directories', () => {
     beforeEach(() => {
-      engine = new ProtectionEngine(
-        [],
-        ['/Users/test/project', '/Users/test/workspace/app'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: [],
+        allowedDirectories: ['/Users/test/project', '/Users/test/workspace/app'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
     });
 
     it('returns allowed directory that matches the path', () => {
@@ -92,10 +101,12 @@ describe('ProtectionEngine', () => {
     });
 
     it('returns the longest path when multiple matches exist', () => {
-      const engineWithNested = new ProtectionEngine(
-        [],
-        ['/Users/test', '/Users/test/project'],
-      );
+      const nestedConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: [],
+        allowedDirectories: ['/Users/test', '/Users/test/project'],
+      });
+      const engineWithNested = new ProtectionEngineImpl(nestedConfigProvider);
       expect(engineWithNested.getMatchingAllowedDirectory('/Users/test/project/src/index.js'))
         .toBe('/Users/test/project');
     });
@@ -104,12 +115,22 @@ describe('ProtectionEngine', () => {
   describe('getting protection pattern list', () => {
     it('returns list of configured protection patterns', () => {
       const patterns = ['.git', '*.env', 'node_modules'];
-      engine = new ProtectionEngine(patterns, ['/test']);
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: patterns,
+        allowedDirectories: ['/test'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
       expect(engine.getProtectedPatterns()).toEqual(patterns);
     });
 
     it('works correctly even with empty arrays', () => {
-      engine = new ProtectionEngine([], ['/test']);
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: [],
+        allowedDirectories: ['/test'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
       expect(engine.getProtectedPatterns()).toEqual([]);
     });
   });
@@ -117,10 +138,12 @@ describe('ProtectionEngine', () => {
   describe('allowed directory validation', () => {
     it('returns only existing allowed directories', async () => {
       // Mock required as we don't use actual filesystem
-      engine = new ProtectionEngine(
-        [],
-        ['/Users/test/exists', '/Users/test/not-exists'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: [],
+        allowedDirectories: ['/Users/test/exists', '/Users/test/not-exists'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
 
       // validateAllowedDirectories method will include fs existence check during implementation
       // Here we only verify the method exists
@@ -130,10 +153,12 @@ describe('ProtectionEngine', () => {
 
   describe('complex pattern matching', () => {
     beforeEach(() => {
-      engine = new ProtectionEngine(
-        ['**/.git/**', '**/node_modules/**', '**/*.env', '**/*.key', '.DS_Store'],
-        ['/Users/test/project'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: ['**/.git/**', '**/node_modules/**', '**/*.env', '**/*.key', '.DS_Store'],
+        allowedDirectories: ['/Users/test/project'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
     });
 
     it('also protects .git in nested directories', () => {
@@ -154,10 +179,12 @@ describe('ProtectionEngine', () => {
 
   describe('edge cases', () => {
     beforeEach(() => {
-      engine = new ProtectionEngine(
-        ['.git', '*.log'],
-        ['/Users/test/project'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: ['.git', '*.log'],
+        allowedDirectories: ['/Users/test/project'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
     });
 
     it('distinguishes between upper and lower case', () => {
@@ -178,10 +205,12 @@ describe('ProtectionEngine', () => {
 
   describe('caching functionality', () => {
     beforeEach(() => {
-      engine = new ProtectionEngine(
-        ['.git', '*.env'],
-        ['/Users/test/project'],
-      );
+      configProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: ['.git', '*.env'],
+        allowedDirectories: ['/Users/test/project'],
+      });
+      engine = new ProtectionEngineImpl(configProvider);
     });
 
     it('caches judgment results for the same path', () => {
@@ -215,7 +244,12 @@ describe('ProtectionEngine', () => {
 
   describe('リソース管理', () => {
     it('dispose()を呼び出してもエラーが発生しない', () => {
-      const engine = new ProtectionEngine(['.git'], ['/Users/test/project']);
+      const tempConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        protectedPatterns: ['.git'],
+        allowedDirectories: ['/Users/test/project'],
+      });
+      const engine = new ProtectionEngineImpl(tempConfigProvider);
       expect(() => {
         engine.dispose();
       }).not.toThrow();

@@ -1,22 +1,47 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { inject, injectable } from 'inversify';
 import { v4 as uuidv4 } from 'uuid';
+import { ConfigProviderTag, type ConfigProvider } from '@/services/ConfigProvider.js';
 import { type AuditLog, type Configuration } from '@/types/index.js';
 
-export class LoggingService {
+export const LoggingServiceTag = Symbol.for('LoggingService');
+
+export interface LoggingService {
+  logDeletion: (
+    filePath: string,
+    result: 'success' | 'failed' | 'rejected',
+    reason?: string,
+  ) => Promise<void>;
+
+  logOperation: (
+    operation: 'delete' | 'list_protected' | 'get_allowed',
+    result: 'success' | 'failed' | 'rejected',
+    paths?: string[],
+    reason?: string,
+  ) => Promise<void>;
+
+  logError: (error: Error, context: string) => Promise<void>;
+
+  logServerStart: (config: Configuration) => Promise<void>;
+
+  logDebug: (message: string) => Promise<void>;
+
+  getRecentLogs: (limit?: number) => Promise<AuditLog[]>;
+}
+
+@injectable()
+export class LoggingServiceImpl implements LoggingService {
   private readonly logDirectory: string;
-  private readonly config: Configuration;
   private readonly inMemoryLogs: AuditLog[] = [];
-  private logFileHandle: fs.FileHandle | null = null;
   private currentLogFile = '';
   private currentLogFileSize = 0;
 
-  constructor(config: Configuration, logDirectory?: string) {
-    this.config = config;
-    this.logDirectory = logDirectory ?? path.join(process.cwd(), 'logs');
+  constructor(@inject(ConfigProviderTag) private readonly configProvider: ConfigProvider) {
+    this.logDirectory = this.configProvider.getLogDirectory();
 
     // Only initialize log directory if logging is enabled (not 'none')
-    if (this.config.logLevel !== 'none') {
+    if (this.configProvider.getLogLevel() !== 'none') {
       void this.initializeLogDirectory();
     }
   }
@@ -92,7 +117,7 @@ export class LoggingService {
    * Log an error with context information
    */
   async logError(error: Error, context: string): Promise<void> {
-    const includeStack = this.config.logLevel === 'debug';
+    const includeStack = this.configProvider.getLogLevel() === 'debug';
     const reason = includeStack && (error.stack !== undefined && error.stack !== '')
       ? `${context}: ${error.message}\n${error.stack}`
       : `${context}: ${error.message}`;
@@ -135,7 +160,7 @@ export class LoggingService {
    * Log debug messages (only when log level is debug)
    */
   async logDebug(message: string): Promise<void> {
-    if (this.config.logLevel !== 'debug') {
+    if (this.configProvider.getLogLevel() !== 'debug') {
       return;
     }
 
@@ -155,7 +180,7 @@ export class LoggingService {
    */
   private async writeLogEntry(logEntry: AuditLog): Promise<void> {
     // Skip all logging if log level is 'none'
-    if (this.config.logLevel === 'none') {
+    if (this.configProvider.getLogLevel() === 'none') {
       return;
     }
 
@@ -181,7 +206,7 @@ export class LoggingService {
    */
   private shouldLog(logEntry: AuditLog): boolean {
     const logLevels = ['debug', 'info', 'warn', 'error'];
-    const configLevelIndex = logLevels.indexOf(this.config.logLevel);
+    const configLevelIndex = logLevels.indexOf(this.configProvider.getLogLevel());
 
     // Determine log level for this entry
     let entryLevelIndex: number;
@@ -239,7 +264,7 @@ export class LoggingService {
    * Check if log rotation is needed
    */
   private shouldRotateLog(entrySize: number): boolean {
-    const maxSize = this.config.maxLogFileSize ?? 10 * 1024 * 1024; // Default 10MB
+    const maxSize = this.configProvider.getMaxLogFileSize() ?? 10 * 1024 * 1024; // Default 10MB
     return this.currentLogFileSize + entrySize > maxSize;
   }
 
@@ -250,12 +275,6 @@ export class LoggingService {
     try {
       if (this.currentLogFile === '') {
         return;
-      }
-
-      // Close current file handle
-      if (this.logFileHandle) {
-        await this.logFileHandle.close();
-        this.logFileHandle = null;
       }
 
       // Generate new log file name
@@ -283,7 +302,7 @@ export class LoggingService {
    */
   private async cleanupOldLogFiles(): Promise<void> {
     try {
-      const maxFiles = this.config.maxLogFiles ?? 5;
+      const maxFiles = this.configProvider.getMaxLogFiles() ?? 5;
       const files = await fs.readdir(this.logDirectory);
 
       // Filter and sort log files by modification time
@@ -332,37 +351,5 @@ export class LoggingService {
     return this.inMemoryLogs
       .slice(-limit)
       .reverse(); // Most recent first
-  }
-
-  /**
-   * Force flush any pending log operations
-   */
-  async flush(): Promise<void> {
-    // Since we're using appendFile which is atomic,
-    // this is mainly for testing purposes to ensure writes are complete
-    // In a real implementation, you might have buffered writes to flush
-    try {
-      if (this.logFileHandle) {
-        await this.logFileHandle.sync();
-      }
-    }
-    catch (_error) {
-      // Ignore flush errors for now
-    }
-  }
-
-  /**
-   * Close the logging service and any open file handles
-   */
-  async close(): Promise<void> {
-    try {
-      if (this.logFileHandle) {
-        await this.logFileHandle.close();
-        this.logFileHandle = null;
-      }
-    }
-    catch (error) {
-      console.error('Failed to close log file handle:', error);
-    }
   }
 }

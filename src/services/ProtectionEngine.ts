@@ -1,15 +1,28 @@
 import { existsSync } from 'fs';
 import * as fs from 'fs';
 import * as path from 'path';
+import { inject, injectable } from 'inversify';
 import { minimatch } from 'minimatch';
+import { ConfigProvider, ConfigProviderTag } from '@/services/ConfigProvider.js';
 
-export class ProtectionEngine {
+export const ProtectionEngineTag = Symbol.for('ProtectionEngine');
+
+export interface ProtectionEngine {
+  isProtected: (filePath: string) => boolean;
+  getProtectedPatterns: () => string[];
+  isWithinAllowedDirectories: (filePath: string) => boolean;
+  getMatchingAllowedDirectory: (filePath: string) => string | null;
+  validateAllowedDirectories: () => Promise<string[]>;
+  dispose: () => void;
+}
+
+@injectable()
+export class ProtectionEngineImpl implements ProtectionEngine {
   private readonly patternCache = new Map<string, boolean>();
   private fileWatchers: fs.FSWatcher[] = [];
 
   constructor(
-    private readonly patterns: string[],
-    private readonly allowedDirectories: string[],
+    @inject(ConfigProviderTag) private readonly configProvider: ConfigProvider,
   ) {
     this.initializeFileWatchers();
   }
@@ -30,7 +43,7 @@ export class ProtectionEngine {
     }
 
     // Pattern matching for protection
-    const result = this.patterns.some((pattern) => {
+    const result = this.configProvider.getProtectedPatterns().some((pattern) => {
       // パスの各部分でマッチングを試みる
       const normalizedPath = filePath.replace(/\/$/, ''); // 末尾のスラッシュを削除
 
@@ -75,18 +88,18 @@ export class ProtectionEngine {
   }
 
   getProtectedPatterns(): string[] {
-    return [...this.patterns];
+    return [...this.configProvider.getProtectedPatterns()];
   }
 
   isWithinAllowedDirectories(filePath: string): boolean {
-    return this.allowedDirectories.some(dir =>
+    return this.configProvider.getAllowedDirectories().some(dir =>
       filePath === dir || filePath.startsWith(dir + '/'),
     );
   }
 
   getMatchingAllowedDirectory(filePath: string): string | null {
     // 最も長いマッチングパスを優先
-    const matches = this.allowedDirectories
+    const matches = this.configProvider.getAllowedDirectories()
       .filter(dir => filePath === dir || filePath.startsWith(dir + '/'))
       .sort((a, b) => b.length - a.length);
 
@@ -96,7 +109,7 @@ export class ProtectionEngine {
   async validateAllowedDirectories(): Promise<string[]> {
     const validDirectories: string[] = [];
 
-    for (const dir of this.allowedDirectories) {
+    for (const dir of this.configProvider.getAllowedDirectories()) {
       if (existsSync(dir)) {
         validDirectories.push(dir);
       }
@@ -107,7 +120,7 @@ export class ProtectionEngine {
 
   private initializeFileWatchers(): void {
     try {
-      this.fileWatchers = this.allowedDirectories.map((dir) => {
+      this.fileWatchers = this.configProvider.getAllowedDirectories().map((dir) => {
         if (existsSync(dir)) {
           return fs.watch(dir, { recursive: true }, (eventType, filename) => {
             if (filename !== null) {
