@@ -13,6 +13,7 @@ export default defineConfig({
         'node_modules/',
         'eslint/',
         'dist/',
+        'script/',
         'test/',
         '**/*.d.ts',
         '*.ts',

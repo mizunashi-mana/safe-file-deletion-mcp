@@ -2,27 +2,26 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { LoggingService } from '@/core/LoggingService.js';
+import { ConfigProviderImpl } from '@/services/ConfigProvider.js';
+import { LoggingServiceImpl } from '@/services/LoggingService.js';
 import { type Configuration, DEFAULT_CONFIG } from '@/types/index.js';
 
 describe('LoggingService', () => {
-  let loggingService: LoggingService;
+  let loggingService: LoggingServiceImpl;
   let tempLogDir: string;
-  let config: Configuration;
+  let configProvider: ConfigProviderImpl;
 
   beforeEach(async () => {
     // Create temporary directory for test logs
     tempLogDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-service-test-'));
 
-    config = {
+    configProvider = new ConfigProviderImpl({
       ...DEFAULT_CONFIG,
       logLevel: 'info',
-    };
+      logDirectory: tempLogDir,
+    });
 
-    loggingService = new LoggingService(config, tempLogDir);
-
-    // Clear any existing logs
-    await loggingService.flush();
+    loggingService = new LoggingServiceImpl(configProvider);
   });
 
   afterEach(async () => {
@@ -120,8 +119,12 @@ describe('LoggingService', () => {
     });
 
     it('should log errors with stack trace in debug mode', async () => {
-      const debugConfig = { ...config, logLevel: 'debug' as const };
-      const debugLoggingService = new LoggingService(debugConfig, tempLogDir);
+      const debugConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'debug' as const,
+        logDirectory: tempLogDir,
+      });
+      const debugLoggingService = new LoggingServiceImpl(debugConfigProvider);
 
       const error = new Error('Debug error');
       error.stack = 'Error: Debug error\\n    at test';
@@ -161,12 +164,16 @@ describe('LoggingService', () => {
     it('should write logs in JSON format to file', async () => {
       // Create a fresh temp directory and service for this test
       const freshTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-service-fresh-'));
-      const freshService = new LoggingService(config, freshTempDir);
+      const freshConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'info',
+        logDirectory: freshTempDir,
+      });
+      const freshService = new LoggingServiceImpl(freshConfigProvider);
 
       await freshService.logDeletion('/test/file.txt', 'success');
 
       // Force flush to ensure log is written
-      await freshService.flush();
 
       const logFiles = await fs.readdir(freshTempDir);
       expect(logFiles).toHaveLength(1);
@@ -192,12 +199,15 @@ describe('LoggingService', () => {
     it('should append multiple log entries to the same file', async () => {
       // Create a fresh temp directory and service for this test
       const freshTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-service-fresh2-'));
-      const freshService = new LoggingService(config, freshTempDir);
+      const freshConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'info',
+        logDirectory: freshTempDir,
+      });
+      const freshService = new LoggingServiceImpl(freshConfigProvider);
 
       await freshService.logDeletion('/test/file1.txt', 'success');
       await freshService.logDeletion('/test/file2.txt', 'failed', 'Permission denied');
-
-      await freshService.flush();
 
       const logFiles = await fs.readdir(freshTempDir);
       const logContent = await fs.readFile(path.join(freshTempDir, logFiles[0]!), 'utf-8');
@@ -239,8 +249,12 @@ describe('LoggingService', () => {
 
   describe('Log Level Control', () => {
     it('should respect debug log level and include all logs', async () => {
-      const debugConfig = { ...config, logLevel: 'debug' as const };
-      const debugService = new LoggingService(debugConfig, tempLogDir);
+      const debugConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'debug' as const,
+        logDirectory: tempLogDir,
+      });
+      const debugService = new LoggingServiceImpl(debugConfigProvider);
 
       await debugService.logDeletion('/test/file.txt', 'success');
       await debugService.logError(new Error('Debug error'), 'Debug context');
@@ -250,8 +264,12 @@ describe('LoggingService', () => {
     });
 
     it('should filter out debug logs when log level is info', async () => {
-      const infoConfig = { ...config, logLevel: 'info' as const };
-      const infoService = new LoggingService(infoConfig, tempLogDir);
+      const infoConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'info' as const,
+        logDirectory: tempLogDir,
+      });
+      const infoService = new LoggingServiceImpl(infoConfigProvider);
 
       // This should be included (info level)
       await infoService.logDeletion('/test/file.txt', 'success');
@@ -264,8 +282,12 @@ describe('LoggingService', () => {
     });
 
     it('should include error logs at all log levels', async () => {
-      const errorConfig = { ...config, logLevel: 'error' as const };
-      const errorService = new LoggingService(errorConfig, tempLogDir);
+      const errorConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'error' as const,
+        logDirectory: tempLogDir,
+      });
+      const errorService = new LoggingServiceImpl(errorConfigProvider);
 
       await errorService.logError(new Error('Critical error'), 'Error context');
 
@@ -274,8 +296,12 @@ describe('LoggingService', () => {
     });
 
     it('should include warn logs when log level is warn or lower', async () => {
-      const warnConfig = { ...config, logLevel: 'warn' as const };
-      const warnService = new LoggingService(warnConfig, tempLogDir);
+      const warnConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'warn' as const,
+        logDirectory: tempLogDir,
+      });
+      const warnService = new LoggingServiceImpl(warnConfigProvider);
 
       await warnService.logDeletion('/test/.git/config', 'rejected', 'Protected pattern');
 
@@ -332,16 +358,18 @@ describe('LoggingService', () => {
   describe('Log Rotation', () => {
     it('should rotate log files when they exceed size limit', async () => {
       // Create a service with a very small size limit for testing
-      const rotationConfig = { ...config, maxLogFileSize: 200 }; // 200 bytes
       const rotationTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-rotation-'));
-      const rotationService = new LoggingService(rotationConfig, rotationTempDir);
+      const rotationConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        maxLogFileSize: 200, // 200 bytes
+        logDirectory: rotationTempDir,
+      });
+      const rotationService = new LoggingServiceImpl(rotationConfigProvider);
 
       // Log enough entries to exceed the size limit
       for (let i = 0; i < 5; i++) {
         await rotationService.logDeletion(`/test/file${i}.txt`, 'success');
       }
-
-      await rotationService.flush();
 
       const logFiles = await fs.readdir(rotationTempDir);
       expect(logFiles.length).toBeGreaterThan(1); // Should have created multiple log files
@@ -351,18 +379,18 @@ describe('LoggingService', () => {
     });
 
     it('should keep only the specified number of rotated log files', async () => {
-      const rotationConfig = {
-        ...config,
+      const rotationTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-rotation2-'));
+      const rotationConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
         maxLogFileSize: 100, // Very small to force rotation
         maxLogFiles: 3,
-      };
-      const rotationTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-rotation2-'));
-      const rotationService = new LoggingService(rotationConfig, rotationTempDir);
+        logDirectory: rotationTempDir,
+      });
+      const rotationService = new LoggingServiceImpl(rotationConfigProvider);
 
       // Generate enough logs to create more than 3 files
       for (let i = 0; i < 10; i++) {
         await rotationService.logDeletion(`/test/file${i}.txt`, 'success');
-        await rotationService.flush();
         // Small delay to ensure different timestamps for file names
         await new Promise(resolve => setTimeout(resolve, 20));
       }
@@ -381,15 +409,18 @@ describe('LoggingService', () => {
     });
 
     it('should preserve log content during rotation', async () => {
-      const rotationConfig = { ...config, maxLogFileSize: 300 };
       const rotationTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-rotation3-'));
-      const rotationService = new LoggingService(rotationConfig, rotationTempDir);
+      const rotationConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        maxLogFileSize: 300,
+        logDirectory: rotationTempDir,
+      });
+      const rotationService = new LoggingServiceImpl(rotationConfigProvider);
 
       const logMessages = ['/test/file1.txt', '/test/file2.txt', '/test/file3.txt'];
 
       for (const message of logMessages) {
         await rotationService.logDeletion(message, 'success');
-        await rotationService.flush();
       }
 
       const logFiles = await fs.readdir(rotationTempDir);
@@ -430,7 +461,12 @@ describe('LoggingService', () => {
       const readOnlyDir = await fs.mkdtemp(path.join(os.tmpdir(), 'readonly-'));
       await fs.chmod(readOnlyDir, 0o444); // Read-only
 
-      const errorService = new LoggingService(config, readOnlyDir);
+      const errorConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'info',
+        logDirectory: readOnlyDir,
+      });
+      const errorService = new LoggingServiceImpl(errorConfigProvider);
 
       // This should not throw an error, but should handle it gracefully
       await expect(errorService.logDeletion('/test/file.txt', 'success')).resolves.not.toThrow();
@@ -442,13 +478,16 @@ describe('LoggingService', () => {
 
     it('should not log sensitive information', async () => {
       const securityTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-security-'));
-      const securityService = new LoggingService(config, securityTempDir);
+      const securityConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'info',
+        logDirectory: securityTempDir,
+      });
+      const securityService = new LoggingServiceImpl(securityConfigProvider);
 
       // Log a path that might contain sensitive information
       const sensitivePath = '/home/user/.ssh/id_rsa';
       await securityService.logDeletion(sensitivePath, 'rejected', 'Protected pattern');
-
-      await securityService.flush();
 
       const logFiles = await fs.readdir(securityTempDir);
       const logContent = await fs.readFile(path.join(securityTempDir, logFiles[0]!), 'utf-8');
@@ -466,7 +505,12 @@ describe('LoggingService', () => {
 
     it('should handle corrupted log files during rotation', async () => {
       const corruptionTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logging-corruption-'));
-      const corruptionService = new LoggingService(config, corruptionTempDir);
+      const corruptionConfigProvider = new ConfigProviderImpl({
+        ...DEFAULT_CONFIG,
+        logLevel: 'info',
+        logDirectory: corruptionTempDir,
+      });
+      const corruptionService = new LoggingServiceImpl(corruptionConfigProvider);
 
       // Create a corrupted log file
       const corruptedFile = path.join(corruptionTempDir, 'corrupted.log');

@@ -12,6 +12,41 @@ export const ConfigurationSchema = z.object({
 
 export type Configuration = z.infer<typeof ConfigurationSchema>;
 
+// CLI Arguments type
+export interface CLIArguments {
+  allowedDirectories?: string[];
+  protectedPatterns?: string[];
+  logLevel?: 'none' | 'debug' | 'info' | 'warn' | 'error';
+  maxBatchSize?: number;
+  maxLogFileSize?: number;
+  maxLogFiles?: number;
+  configFile?: string;
+  help?: boolean;
+  version?: boolean;
+}
+
+// File configuration type
+export interface FileConfig {
+  allowedDirectories?: string[];
+  protectedPatterns?: string[];
+  logLevel?: 'none' | 'debug' | 'info' | 'warn' | 'error';
+  maxBatchSize?: number;
+  maxLogFileSize?: number;
+  maxLogFiles?: number;
+  logDirectory?: string;
+}
+
+// Default configuration
+export const DEFAULT_CONFIG: Configuration & { logDirectory: string } = {
+  allowedDirectories: [],
+  protectedPatterns: ['.git', 'node_modules', '.env*'],
+  logLevel: 'info',
+  maxBatchSize: 100,
+  maxLogFileSize: 10485760, // 10MB
+  maxLogFiles: 10,
+  logDirectory: 'logs',
+};
+
 // Deletion request schemas and types
 export const DeletionRequestSchema = z.object({
   paths: z.array(z.string().refine(path => path.startsWith('/'), {
@@ -93,31 +128,3 @@ export class SafeDeletionError extends Error {
     this.name = 'SafeDeletionError';
   }
 }
-
-// CLI arguments type
-export interface CLIArguments {
-  allowedDirectories?: string[];
-  protectedPatterns?: string[];
-  configFile?: string;
-  logLevel?: 'debug' | 'info' | 'warn' | 'error';
-}
-
-// File configuration type
-export interface FileConfig {
-  allowedDirectories?: string[];
-  protectedPatterns?: string[];
-  logLevel?: 'debug' | 'info' | 'warn' | 'error';
-  maxBatchSize?: number;
-  maxLogFileSize?: number;
-  maxLogFiles?: number;
-}
-
-// Default configuration
-export const DEFAULT_CONFIG: Configuration = {
-  allowedDirectories: [],
-  protectedPatterns: ['.git'],
-  logLevel: 'none', // Logging disabled by default
-  maxBatchSize: 50,
-  maxLogFileSize: 10 * 1024 * 1024, // 10MB
-  maxLogFiles: 5,
-};
