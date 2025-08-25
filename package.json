@@ -52,7 +52,7 @@
     "minimatch": "^10.0.3",
     "reflect-metadata": "^0.2.2",
     "uuid": "^11.1.0",
-    "zod": "^3.23.8"
+    "zod": "^4.1.1"
   },
   "devDependencies": {
     "@eslint-community/eslint-plugin-eslint-comments": "^4.5.0",
